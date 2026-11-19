@@ -1,0 +1,9 @@
+.gitignore
+__pycache__/
+.venv/
+dist/
+build/
+.flet/
+*.db*
+.coverage
+.pytest_cache/

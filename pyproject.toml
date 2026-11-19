@@ -1,0 +1,24 @@
+[project]
+name = "time-tracker"
+version = "0.1.0"
+description = "Time tracker estilo Toggl: sesiones de trabajo, tareas e intervalos (Flet + SQLite)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Flet 1.x separó la CLI del runtime: sin flet-cli, `flet.exe` intenta
+    # autoinstalarse en el Python del sistema (evitado así).
+    "flet==1.1.2",
+    "flet-cli==1.1.2",
+    "flet-desktop==1.1.2",
+    "flet-charts==1.1.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
