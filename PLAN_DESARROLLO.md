@@ -287,20 +287,47 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 
 ### Fase 2 — UI Flet en Windows
 
-**Objetivo:** MVP funcional de tracking.
+**Objetivo:** MVP funcional de tracking. — **✅ Completada y verificada (20/11/2026).**
 
-- [ ] `ui/app.py` + `ui/theme.py`: tema Material limpio, tipografía y espaciados coherentes.
-- [ ] **home_page**: lista de sesiones existentes (nombre, fecha, duración total), botón "Nueva sesión", "Continuar sesión", "Eliminar" con confirmación.
-- [ ] **session_page**:
+> **Estado: ✅ completada y verificada (20/11/2026).** La verificación del coordinador (pasada del tester) está hecha: **225 tests → 225 passed, 0 failed, 0 xfail** (78 tests nuevos de UI), cobertura **100 % en `core`+`storage` y también 100 % en `ui/`**, **sin bugs** en la UI. Decisiones cerradas de la implementación, ver §6.1 (Fase 2).
+
+- [x] `ui/app.py` + `ui/theme.py`: tema Material limpio, tipografía y espaciados coherentes.
+- [x] **home_page**: lista de sesiones existentes (nombre, fecha, duración total), botón "Nueva sesión", "Continuar sesión", "Eliminar" con confirmación.
+- [x] **session_page**:
   - Crear tarea (campo de texto + Enter/botón) — escribe en el **catálogo global** (§5.3.3).
   - Lista de tareas; al pulsar una → cierra entry abierta (si la hay) y abre nueva.
   - **Cronómetro visible** (hh:mm:ss) de la tarea en curso, con estado claro de "corriendo".
   - Botón **Detener** (guarda `ended_at`) y **Terminar sesión** (cierra entry + marca `sessions.ended_at`).
   - **Lista de intervalos** de la sesión: tarea, inicio, fin, duración formateada.
-- [ ] Persistencia entre arranques: al reabrir la app se recupera la sesión y la entry en curso.
-- [ ] Tests de UI mínimos (ver §7).
+- [x] Persistencia entre arranques: al reabrir la app se recupera la sesión y la entry en curso.
+- [x] Tests de UI mínimos (ver §7): **78 tests de UI en verde** — `test_ui_format` 17, `test_ui_logica` 19, `test_ui_app` 26, `test_ui_vistas` 9, `test_ui_errores` 7 (ayudante `tests/ui_util.py`); verifican el contrato §6.1, incluido el **test clave**: sesión cerrada = **ni botones ni TextField de escritura**.
 
-**Entregables:** app usable de punta a punta en Windows: crear sesión → tareas → cronómetro → intervalos persistidos.
+**Entregables:** app usable de punta a punta en Windows: crear sesión → tareas → cronómetro → intervalos persistidos. **✅ Verificado por el coordinador (20/11/2026):** 225 tests en verde (78 de UI), 100 % de cobertura (`core`+`storage`+`ui`), sin bugs en la UI.
+
+#### 6.1 Decisiones cerradas en la implementación de la Fase 2 (19/11/2026) — **✅ completada y verificada (20/11/2026)**
+
+> Todas las decisiones de este apartado están **cerradas** (fuente indicada en cada una). El estado de la fase es **"✅ completada y verificada (20/11/2026)"**: la pasada de verificación del coordinador/tester está hecha (225 tests en verde, 100 % de cobertura `core`+`storage`+`ui`, sin bugs).
+
+**Estructura de la UI (diseño para testabilidad sin GUI):**
+
+| Módulo | Responsabilidad |
+|---|---|
+| `ui/app.py` | `TimeTrackerApp`: navegación por rutas `/` (portada/inicio) y `/sesion/<id>`; **pila con "atrás" nativo** de Flet; **relee la BD y repinta tras cada acción** (los modelos son *snapshots* inmutables, §4). |
+| `ui/theme.py` | Tema **Material 3** con **semilla índigo**; ventana **1120×800** (mínimo **800×600**); **columna centrada de 740 px con scroll**. |
+| `ui/pages/inicio.py` | Portada: lista de sesiones, crear/continuar/eliminar. |
+| `ui/pages/sesion.py` | Vista de sesión: tareas, cronómetro, detener, terminar sesión, lista de intervalos. |
+| `ui/format.py`, `ui/errores.py`, `ui/logica.py` | **Capas puras sin Flet** (formateo, mapeo de errores a mensaje de usuario, lógica de presentación): **diseño pensado para testear sin GUI**. |
+
+**UX decidida (decisiones CERRADAS):**
+
+- **Tema: `ThemeMode.SYSTEM`** — la app respeta el modo claro/oscuro del sistema *(decisión del usuario)*.
+- **"Terminar sesión": diálogo de confirmación SOLO si hay tarea cronometrada en curso**; si no hay tarea, cierra directo *(decisión del usuario)*.
+- **Formatos** *(decisión del coordinador)*: totales de **portada legibles** (`1 h 23 min`); **intervalos precisos `hh:mm:ss`** (soporta **> 23 h**).
+- **Sin snackbar de éxito al añadir tarea**: la fila nueva es el feedback — menos ruido *(decisión del coordinador)*.
+- **Errores de dominio → SnackBar de 4 s** con `mensaje_usuario()`: el error de dominio se muestra **tal cual, en español**; `StorageError` y excepciones inesperadas → **mensaje genérico**, **jamás una traza** al usuario.
+- **Confirmación modal también en "eliminar sesión"**, advirtiendo de que **el catálogo de tareas se conserva** (las tareas globales no se borran en cascada, §5.2).
+- **Cronómetro**: *tick* de **1 s** con `page.run_task`, **recalculado desde el `started_at` real** de la entry → **persiste entre arranques** de la app (no depende de estado en memoria).
+- **Sesión cerrada = solo lectura, DOS veces**: en **servicio** (`SessionClosedError` al escribir, §5.3.4) y en **presentación** (la vista de sesión cerrada **no contiene ningún control de escritura**).
 
 ### Fase 3 — Reporting
 
@@ -344,10 +371,11 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 | Unitarias de dominio | modelos, validaciones, reglas (una entry abierta, cierre al cambiar de tarea) | `pytest` | 1 |
 | Integración persistencia | repositorio contra SQLite real en `tmp_path`; cascadas e integridad | `pytest` | 1 |
 | Reporting | agregaciones con datasets sembrados (incl. bordes: días sin datos, entry en curso) | `pytest` | 3 |
-| UI | tests mínimos: montar páginas con datos falsos y verificar controles clave; el resto, **pruebas manuales** con checklist | `flet` + fixtures o tests manuales | 2 |
+| UI | **78 tests en verde (20/11/2026)**: montaje **headless** de páginas con datos falsos (`PaginaFalsa`) y verificación de controles clave — **sin plugin de Flet para pytest** (las `ft.View` se construyen headless); el resto, **pruebas manuales** con checklist | `pytest` (+ ayudante propio `tests/ui_util.py`) | 2 |
 | Smoke final | checklist manual de los criterios de §9 en Windows limpio | manual | 4 |
 
 - No se usan *mocks* de SQLite: se prueba contra una BD real temporal (más fiable y detecta errores de SQL).
+- **Cobertura (20/11/2026): 100 % en `core`, `storage` y `ui/`** (225 tests en verde). **Único fichero no cubierto: `main.py`** (bootstrap Flet real, que requiere GUI) — **alcance razonable** documentado al cerrar la Fase 2.
 - Checklist manual por fase: crear sesión, cambiar de tarea repetidamente, matar el proceso y reabrir, verificar que los tiempos cuadran.
 - **CI (GitHub Actions) con `pytest`: opcional recomendado, pendiente de decisión del usuario.** No bloquea la Fase 1 ni el MVP: la suite corre y se exige en local (`pytest` en verde, §9.8); el CI solo añade repetibilidad y pasaría a ser necesario únicamente si se retoma iOS con runner macOS.
 
@@ -397,3 +425,5 @@ El MVP se considera terminado cuando, en **Windows**:
 | 2026-11-18 | **Decisiones del usuario (§5 actualizado):** **(1) Nuevo modelo de datos — tareas globales estilo Toggl** (motivo: reutilizar tareas como "Correo"/"Reuniones" entre días/sesiones): `tasks` **sin `session_id`** (`name UNIQUE` tras `strip()`, homónimos → `DuplicateTaskError`), `time_entries` **añade `session_id`** (FK a `sessions` `ON DELETE CASCADE` + `idx_entries_session`) — **DDL v2, `PRAGMA user_version = 2`** (migración v1 *best-effort* por *makerman*; app pre-lanzamiento, BD v1 solo en dev). Al borrar una sesión se borran sus entries en cascada pero **las tareas sobreviven al catálogo**. **(2) Sesiones cerradas = historial de solo lectura**: no se reabren; al arrancar solo crear sesión nueva o continuar la abierta; operar sobre una cerrada lanza `SessionClosedError`. **(3)** Regla de **sesión única abierta: ya IMPLEMENTADA** (auto-cierre en `crear_sesion`, abiertas + entry global en una transacción con un único `now`; `seleccionar_sesion` no cierra ni reabre). | Agente bibliotecario |
 | 2026-11-18 | **Implementación (Fase 1):** regla de **sesión única abierta** implementada por **makerman**; añadido **`pytest-cov>=6`** al group `dev` de `pyproject.toml` (resuelto 7.1.0 + coverage 7.17.3). **Corrección FK-vs-UNIQUE** en `storage/sqlite_repository.py`: por `sqlite_errorcode`, `SQLITE_CONSTRAINT_UNIQUE` → `DuplicateTaskError`; FK u otra integridad → `StorageError`. Normalización `strip()` ahora en **dos capas** (servicio y modelo, idempotente). `.gitignore` ampliado. **Nota:** la Fase 1 queda "completada con refactor de modelo en curso" (ver Fase 1b). | Agente bibliotecario |
 | 2026-11-19 | **Cierre de Fase 1b (modelo de tareas globales), verificado por el coordinador.** DDL v2 (`user_version = 2`) + migración v1→v2 implementada y smoke-verificada: **transaccional** (rollback → BD intacta en v1), **idempotente** (`user_version = 2`), homónimos **fusionados con `MIN(id)`/`MIN(created_at)`**, entries heredan `session_id` de la task vieja, **huérfanos descartados**, `foreign_key_check` limpio. **Suite: 147 tests → ✅ 147 passed, 0 failed, 0 xfail; cobertura `core`+`storage` = 100 %** (`uv run pytest --cov=core --cov=storage`); **retirado el antiguo xfail FK** (bug FK-vs-UNIQUE corregido y en verde). **Decisión confirmada:** `seleccionar_sesion` sobre sesión cerrada **NO lanza** (historial consultable de solo lectura); las escrituras `iniciar_tarea`/`cerrar_sesion` sobre ella → **`SessionClosedError`** (§5.3.4 actualizado). Roadmap: Fase 1b checklist ✅ completo y Fase 1 sin la nota "refactor en curso". Añadida en §4 la **API v2 para la Fase 2 (UI)**. README actualizado (estado + comando de cobertura). | Agente bibliotecario |
+| 2026-11-19 | **Fase 2 (UI Flet) — implementada, EN VERIFICACIÓN (checklist sin marcar).** Estructura cerrada: `ui/app.py` (`TimeTrackerApp`, rutas `/` y `/sesion/<id>`, pila con atrás nativo, relee BD y repinta tras cada acción), `ui/theme.py` (Material 3, semilla índigo, ventana 1120×800 mín. 800×600, columna centrada 740 px con scroll), `ui/pages/inicio.py`, `ui/pages/sesion.py` y capas puras sin Flet `ui/format.py`, `ui/errores.py`, `ui/logica.py` (testabilidad sin GUI). **Decisiones UX cerradas** (§6.1 nuevo): tema **`ThemeMode.SYSTEM`** (usuario); **"Terminar sesión" con confirmación SOLO si hay tarea cronometrada** (usuario); **formatos** — totales de portada legibles `1 h 23 min`, intervalos precisos `hh:mm:ss` con >23 h (coordinador); **sin snackbar de éxito al añadir tarea** (coordinador); **errores de dominio → SnackBar 4 s** con `mensaje_usuario()` (dominio en español; `StorageError`/inesperadas → genérico, **jamás traza**); **confirmación modal en "eliminar sesión"** advirtiendo que el **catálogo de tareas se conserva**; **cronómetro** con *tick* 1 s vía `page.run_task` **recalculado desde `started_at` real** (persiste entre arranques); **sesión cerrada = solo lectura en dos capas** (`SessionClosedError` en servicio + vista sin controles de escritura). README actualizado al estado "Fase 2 implementada (en verificación)". **Falta:** pasada de verificación del coordinador/tester — checklist de Fase 2 **NO marcado**. | Agente bibliotecario |
+| 2026-11-20 | **Cierre de Fase 2 (UI Flet), completada y verificada por el coordinador.** **Suite: 225 tests → ✅ 225 passed, 0 failed, 0 xfail** (78 tests nuevos de UI: `test_ui_format` 17, `test_ui_logica` 19, `test_ui_app` 26, `test_ui_vistas` 9, `test_ui_errores` 7; ayudante `tests/ui_util.py`). **Cobertura 100 % en `core`+`storage` y también 100 % en `ui/`**; **sin bugs** en la UI; **sin plugin de Flet para pytest** (las `ft.View` se construyen headless). Tests de UI verifican el contrato §6.1, incluido el **test clave**: sesión cerrada = **ni botones ni TextField de escritura**; handlers con `PaginaFalsa` (crear/abrir/terminar con confirmación **solo si hay entry en curso**; eliminar con aviso de catálogo); `ThemeMode.SYSTEM`; cronómetro **recalculado desde `started_at`**. **Único no cubierto: `main.py`** (bootstrap Flet real, requiere GUI) — **alcance razonable** anotado en §7. Roadmap: checklist de Fase 2 **✅ completo** y notas de §6/§6.1 actualizadas a "completada y verificada (20/11/2026)". §7 ajustado a la realidad (tests de UI hechos, cobertura `ui/`). README actualizado (estado "Fases 0-2 completadas" + 225 tests). | Agente bibliotecario |

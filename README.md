@@ -2,7 +2,7 @@
 
 Aplicación de *time tracking* sencilla estilo Toggl: **sesiones → tareas → intervalos → reporting**. Python + Flet (UI) + SQLite (persistencia).
 
-**Estado actual:** **Fases 0-1 + 1b completadas** — núcleo de dominio (`core/`), persistencia SQLite con **modelo v2 de tareas globales** (`storage/`), **147 tests en verde y 100 % de cobertura** (`core`+`storage`). La **UI Flet está pendiente (Fase 2)**: hoy `main.py` solo abre una ventana placeholder ("¡Hola, Time Tracker!"). El detalle por fases y las decisiones de diseño viven en **[PLAN_DESARROLLO.md](PLAN_DESARROLLO.md)** (documento maestro).
+**Estado actual:** **Fases 0-2 completadas** — núcleo de dominio (`core/`), persistencia SQLite con **modelo v2 de tareas globales** (`storage/`) y **UI Flet** (`ui/`: portada, sesión, cronómetro e intervalos — **✅ completada y verificada el 20/11/2026**). **225 tests en verde y 100 % de cobertura** (`core`, `storage` y `ui`); ver detalle y decisiones en **[PLAN_DESARROLLO.md](PLAN_DESARROLLO.md)** §6.1. El detalle por fases y las decisiones de diseño viven en **[PLAN_DESARROLLO.md](PLAN_DESARROLLO.md)** (documento maestro).
 
 ## Requisitos
 
@@ -13,8 +13,8 @@ Aplicación de *time tracking* sencilla estilo Toggl: **sesiones → tareas → 
 
 ```bash
 uv sync                          # crea/actualiza .venv con las dependencias
-uv run flet run main.py          # abre la app (hoy: ventana placeholder de humo)
-uv run pytest                    # suite completa (147 tests)
+uv run flet run main.py          # abre la app (ventana Flet: portada + sesión)
+uv run pytest                    # suite completa (225 tests)
 uv run pytest --cov=core --cov=storage   # tests + cobertura (hoy: 100 %)
 ```
 
@@ -34,15 +34,16 @@ Según el plan: arquitectura en capas con dependencias unidireccionales **`ui �
 
 ```
 time-tracker/
-├── main.py                # punto de entrada (hoy: humo de arranque de Flet)
+├── main.py                # punto de entrada (arranca la app Flet)
 ├── pyproject.toml         # dependencias (uv) — flet==1.1.2 + flet-cli + flet-desktop + flet-charts
 ├── PLAN_DESARROLLO.md     # documento maestro del proyecto
 ├── core/                  # lógica de negocio: models, services, repository (abstracción), exceptions
 ├── storage/               # persistencia SQLite: db.py (conexión única + migraciones),
 │                          #   sqlite_repository.py (CRUD), factory.py (composición de arranque)
-├── ui/                    # presentación Flet (Fase 2; aún vacío)
+├── ui/                    # presentación Flet (Fase 2, completada y verificada 20/11/2026):
+│                          #   app.py, theme.py, pages/ (inicio, sesión), capas puras format/errores/logica
 ├── reports/               # consultas/agregaciones de reporting (Fase 3; aún vacío)
-└── tests/                 # suite pytest: 147 tests (100 % cobertura core+storage)
+└── tests/                 # suite pytest: 225 tests (100 % cobertura core+storage+ui)
 ```
 
 ## Documentación

@@ -1,19 +1,20 @@
-"""Punto de entrada de Time Tracker (Fase 0: humo de arranque de Flet).
+"""Punto de entrada de Time Tracker (Fase 2: UI Flet, target Windows).
 
-La UI real llega en la Fase 2 (`ui/`); esta versión solo comprueba que la
-ventana se abre en Windows: `uv run flet run main.py` o `uv run python main.py`.
+Arranca la interfaz con la BD por defecto (`~/.time_tracker/time_tracker.db`)
+y el reloj real. Ejecutar con `uv run flet run main.py` o `uv run python main.py`.
 """
 
 from __future__ import annotations
 
 import flet as ft
 
+from storage.factory import create_service
+from ui.app import TimeTrackerApp
+
 
 def main(page: ft.Page) -> None:
-    page.title = "Time Tracker"
-    page.vertical_alignment = ft.MainAxisAlignment.CENTER
-    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.add(ft.Text("Hola, Time Tracker!", size=24))
+    _db, service = create_service()  # la BD vive en los repos del servicio
+    TimeTrackerApp(page, service).arrancar()
 
 
 if __name__ == "__main__":
