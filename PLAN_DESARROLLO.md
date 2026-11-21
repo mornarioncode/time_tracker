@@ -373,9 +373,9 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 - **Aviso ámbar** (icono `WARNING`) de **intervalos en curso excluidos** del recuento.
 - **Snacks en español, sin trazas**: errores de rango/preset/disco → mensaje limpio (mismo criterio que §6.1: jamás un `Traceback` en pantalla).
 
-**Decisión de ubicación del CSV — revisar en Fase 4:**
+**Decisión de ubicación del CSV — revisada y cerrada en Fase 4 (ver §6.3):**
 
-- El CSV se escribe en el **directorio de trabajo actual (`Path.cwd()`)**, con nombre `informe_<marca>.csv` y codificación **`utf-8-sig`** (BOM para que Excel detecte tildes). Es una decisión documentada de la Fase 3 y queda **pendiente de revisar al empaquetar (Fase 4)**, como candidato a escribirse en **`~/Documents`** (al empaquetar el cwd del .exe no es un directorio predecible). *No bloquea nada en Fase 3.*
+- El CSV se escribe en el **directorio de trabajo actual (`Path.cwd()`)**, con nombre `informe_<marca>.csv` y codificación **`utf-8-sig`** (BOM para que Excel detecte tildes). Es una decisión documentada de la Fase 3 y queda **pendiente de revisar al empaquetar (Fase 4)**, como candidato a escribirse en **`~/Documents`** (al empaquetar el cwd del .exe no es un directorio predecible). *No bloquea nada en Fase 3.* — **Resuelto en Fase 4: CSV ahora en `~/Documents` con fallback al CWD, ver §6.3.**
 
 **Límite no testeable headless (alcance razonable documentado):**
 
@@ -383,14 +383,59 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 
 ### Fase 4 — Empaquetado Windows
 
-**Objetivo:** .exe distribuible.
+**Objetivo:** .exe distribuible. — **✅ Completada y verificada (21/11/2026)**, con **un pendiente manual no bloqueante**: probar en máquina limpia sin Python.
 
-- [ ] Probar `flet build windows` y validar que el ejecutable arranca en una máquina limpia (sin Python).
-- [ ] Alternativa: PyInstaller (`--onedir --windowed`) si `flet build` da problemas; documentar cuál se queda.
-- [ ] Nombre/versión/icono del producto en `pyproject.toml` + `assets/`.
-- [ ] Nota: primera ejecución genera el perfil de Flet/Flutter (cold start); comprobar que el arranque es aceptable.
+- [x] Probar `flet build windows` y validar que el ejecutable arranca (smoke en la máquina de desarrollo: arranque 2,5 s con perfil — ≤15 s la primera vez; ver §6.3).
+- [ ] **Pendiente manual del usuario (NO bloqueante):** validar el ejecutable en una **máquina limpia sin Python**. El artefacto ya está construido y smoke-verificado; falta solo esta comprobación final.
+- [x] Alternativa: PyInstaller (`--onedir --windowed`) si `flet build` da problemas; documentar cuál se queda → **se queda `flet build windows`** (sin PyInstaller), ver §6.3.
+- [x] Nombre/versión/icono del producto en `pyproject.toml` + `assets/` → `[tool.flet]` con `product = "Time Tracker"` y `build_number = 1`; versión tomada de `project.version` (0.1.0); **icono por defecto de Flet** (`assets/icon.png` pendiente de diseño), ver §6.3.
+- [x] Nota: primera ejecución genera el perfil de Flet/Flutter (cold start); comprobar que el arranque es aceptable → **2,5 s con perfil** (≤15 s la primera vez), ver §6.3.
 
-**Entregables:** instalador o carpeta con `.exe` funcionando en Windows limpio.
+**Entregables:** instalador o carpeta con `.exe` funcionando en Windows limpio. **✅ Artefacto validado (21/11/2026):** `build/windows/time-tracker.exe` (75 KB) + carpeta autocontenida de **123 MB / 3.115 ficheros** — **no requiere Python ni VC++ redist en el destino, sin red en runtime**. **Falta:** prueba en máquina limpia (pendiente manual, arriba).
+
+#### 6.3 Decisiones y gotchas de la Fase 4 (Empaquetado Windows) — **✅ completada y verificada (21/11/2026)**
+
+> Fuente: implementación de la Fase 4 verificada por el coordinador (21/11/2026). **Suite: 309 tests → ✅ 309 passed, 0 failed; cobertura 100 %** (`core`+`storage`+`ui`+`reports`, 1134 statements).
+
+**CSV → `~/Documents` con fallback al CWD (cierre del pendiente de §6.2):**
+
+- La exportación CSV ya **no escribe en `Path.cwd()`**: `ui/app.py` expone `destino_csv()`, que devuelve **`~/Documents`** (creada con `mkdir(parents=True, exist_ok=True)`) y, si eso falla (**`OSError`**: permisos, disco, home inaccesible), **cae al directorio de trabajo actual (`Path.cwd()`)**. Nunca lanza traza.
+- El código es de la **Fase 3** (commit Fase 3); en la **Fase 4 se ajustaron los tests**: los tests de exportación **parchean `destino_csv` a `tmp_path`** (hermético: no escriben en rutas reales) y se añadió un **test nuevo que cubre ambas ramas** (home válido → `tmp_path/Documents`; home apuntado a un fichero → `mkdir` lanza `OSError` real → cwd).
+- Codificación **`utf-8-sig`** (BOM para Excel) y separador **`;`** sin cambios.
+
+**Herramienta de build: `flet build windows` (sin PyInstaller):**
+
+- **Decisión: se mantiene `flet build windows`**; PyInstaller queda como alternativa documentada pero **no se usa**.
+- **Comando exacto:**
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run flet build windows --yes --log-format plain
+```
+
+- **Gotcha UTF-8:** sin `PYTHONIOENCODING=utf-8` + `PYTHONUTF8=1`, rich/emoji del log provoca **`UnicodeEncodeError`** en la consola **cp1252** de Windows.
+- **Gotcha Modo de Desarrollo de Windows:** **obligatorio** por los **symlinks de los plugins Flutter** (registro `AllowDevelopmentWithoutDevLicense=1`) — **ya activado** en la máquina de desarrollo.
+- **Duración del build:** ~4–5 min.
+- **Requisitos de build:** **Flutter SDK 3.47.9**, **VS Community con C++/MSVC** y **red** (pub.dev).
+
+**`[tool.flet]` en `pyproject.toml`:**
+
+- `product = "Time Tracker"` (nombre visible: título de ventana / menú Inicio) y `build_number = 1`.
+- La versión mostrada sale de **`project.version`** (0.1.0).
+- **Icono:** sin `assets/icon.png` el build usa el **icono por defecto de Flet**; **`assets/icon.png` pendiente de diseño**.
+- **Sin dependencias nuevas** en esta fase.
+
+**Próximo build — `--exclude tests` (decisión del usuario, anotada):**
+
+- Añadir **`--exclude tests`** al comando de build para **no empaquetar `tests/` y los `.md` (845 KB)**. **Pendiente de aplicar en el siguiente rebuild** (el artefacto validado aún los incluye).
+
+**Validación smoke (21/11/2026):**
+
+1. Arranque **2,5 s con perfil** (**≤15 s la primera vez**, que genera el perfil de Flet/Flutter).
+2. BD `~/.time_tracker` OK (`integrity_check` ok).
+3. Cronómetro, informes, gráfico y exportación **CSV** OK.
+4. Cierre **sin huérfanos** de proceso, **sin eventos de crash**.
+
+**Pendiente manual (no bloqueante):** **prueba en máquina limpia sin Python** — queda a cargo del usuario; el resto de la fase está cerrado.
 
 ### Fase 5 — Android (APK) — iOS fuera del alcance actual
 
@@ -414,8 +459,10 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 | UI | **116 tests en verde (21/11/2026)**: 78 de Fase 2 + **38 de informes** (`test_ui_informe`): montaje **headless** de páginas con datos falsos (`PaginaFalsa`) y verificación de controles clave — **sin plugin de Flet para pytest** (las `ft.View` se construyen headless); el resto, **pruebas manuales** con checklist | `pytest` (+ ayudante propio `tests/ui_util.py`) | 2–3 |
 | Smoke final | checklist manual de los criterios de §9 en Windows limpio | manual | 4 |
 
+- **Fase 4 — empaquetado (21/11/2026):** **309 tests en verde, 100 % de cobertura** (`core`+`storage`+`ui`+`reports`, 1134 statements). **Smoke manual del `.exe` hecho** (arranque, BD, cronómetro, informes, gráfico, CSV, cierre sin huérfanos — §6.3); **falta la prueba en máquina limpia sin Python** (pendiente manual, no bloqueante).
+- **Tests herméticos del CSV:** los tests de exportación **parchean `ui.app.destino_csv` a `tmp_path`** (no escriben en `~/Documents` ni en rutas reales); un test dedicado cubre **ambas ramas** de `destino_csv()` (Documents OK / `OSError` → cwd).
 - No se usan *mocks* de SQLite: se prueba contra una BD real temporal (más fiable y detecta errores de SQL).
-- **Cobertura (21/11/2026): 100 % en `core`, `storage`, `ui/` y `reports/stats.py`** (**308 tests en verde**; 1127/1127 statements en esos módulos). **Único fichero no cubierto: `main.py`** (bootstrap Flet real, que requiere GUI) — **alcance razonable** documentado al cerrar la Fase 2. **Límite headless:** el renderizado real de Flutter de los gráficos y el cierre nativo de los diálogos (`DatePicker`) no se pueden testear sin GUI (los objetos Python sí están cubiertos — §6.2).
+- **Cobertura (21/11/2026): 100 % en `core`, `storage`, `ui/` y `reports/`** (**309 tests en verde**; 1134/1134 statements en esos módulos). **Único fichero no cubierto: `main.py`** (bootstrap Flet real, que requiere GUI) — **alcance razonable** documentado al cerrar la Fase 2. **Límite headless:** el renderizado real de Flutter de los gráficos y el cierre nativo de los diálogos (`DatePicker`) no se pueden testear sin GUI (los objetos Python sí están cubiertos — §6.2).
 - **Zona horaria en tests (Windows):** en Windows **no existe `time.tzset`**, así que los tests de rangos se basan en el **offset real del sistema**: derivan la medianoche local esperada con `astimezone()`/`utcoffset()` en lugar de fijar una tz concreta, por lo que **pasan sea cual sea la tz local** de la máquina (no dependen de un offset concreto).
 - Checklist manual por fase: crear sesión, cambiar de tarea repetidamente, matar el proceso y reabrir, verificar que los tiempos cuadran.
 - **CI (GitHub Actions) con `pytest`: opcional recomendado, pendiente de decisión del usuario.** No bloquea la Fase 1 ni el MVP: la suite corre y se exige en local (`pytest` en verde, §9.8); el CI solo añade repetibilidad y pasaría a ser necesario únicamente si se retoma iOS con runner macOS.
@@ -469,3 +516,4 @@ El MVP se considera terminado cuando, en **Windows**:
 | 2026-11-19 | **Fase 2 (UI Flet) — implementada, EN VERIFICACIÓN (checklist sin marcar).** Estructura cerrada: `ui/app.py` (`TimeTrackerApp`, rutas `/` y `/sesion/<id>`, pila con atrás nativo, relee BD y repinta tras cada acción), `ui/theme.py` (Material 3, semilla índigo, ventana 1120×800 mín. 800×600, columna centrada 740 px con scroll), `ui/pages/inicio.py`, `ui/pages/sesion.py` y capas puras sin Flet `ui/format.py`, `ui/errores.py`, `ui/logica.py` (testabilidad sin GUI). **Decisiones UX cerradas** (§6.1 nuevo): tema **`ThemeMode.SYSTEM`** (usuario); **"Terminar sesión" con confirmación SOLO si hay tarea cronometrada** (usuario); **formatos** — totales de portada legibles `1 h 23 min`, intervalos precisos `hh:mm:ss` con >23 h (coordinador); **sin snackbar de éxito al añadir tarea** (coordinador); **errores de dominio → SnackBar 4 s** con `mensaje_usuario()` (dominio en español; `StorageError`/inesperadas → genérico, **jamás traza**); **confirmación modal en "eliminar sesión"** advirtiendo que el **catálogo de tareas se conserva**; **cronómetro** con *tick* 1 s vía `page.run_task` **recalculado desde `started_at` real** (persiste entre arranques); **sesión cerrada = solo lectura en dos capas** (`SessionClosedError` en servicio + vista sin controles de escritura). README actualizado al estado "Fase 2 implementada (en verificación)". **Falta:** pasada de verificación del coordinador/tester — checklist de Fase 2 **NO marcado**. | Agente bibliotecario |
 | 2026-11-20 | **Cierre de Fase 2 (UI Flet), completada y verificada por el coordinador.** **Suite: 225 tests → ✅ 225 passed, 0 failed, 0 xfail** (78 tests nuevos de UI: `test_ui_format` 17, `test_ui_logica` 19, `test_ui_app` 26, `test_ui_vistas` 9, `test_ui_errores` 7; ayudante `tests/ui_util.py`). **Cobertura 100 % en `core`+`storage` y también 100 % en `ui/`**; **sin bugs** en la UI; **sin plugin de Flet para pytest** (las `ft.View` se construyen headless). Tests de UI verifican el contrato §6.1, incluido el **test clave**: sesión cerrada = **ni botones ni TextField de escritura**; handlers con `PaginaFalsa` (crear/abrir/terminar con confirmación **solo si hay entry en curso**; eliminar con aviso de catálogo); `ThemeMode.SYSTEM`; cronómetro **recalculado desde `started_at`**. **Único no cubierto: `main.py`** (bootstrap Flet real, requiere GUI) — **alcance razonable** anotado en §7. Roadmap: checklist de Fase 2 **✅ completo** y notas de §6/§6.1 actualizadas a "completada y verificada (20/11/2026)". §7 ajustado a la realidad (tests de UI hechos, cobertura `ui/`). README actualizado (estado "Fases 0-2 completadas" + 225 tests). | Agente bibliotecario |
 | 2026-11-21 | **Cierre de Fase 3 (Reporting), completada y verificada por el coordinador.** **Suite: 308 tests → ✅ 308 passed, 0 failed, 0 xfail** (+83 nuevos: `tests/test_reports.py` 45, `tests/test_ui_informe.py` 38); **cobertura 100 % en `core`+`storage`+`ui` y `reports/stats.py`** (1127/1127 statements); **sin bugs**. Roadmap: checklist de Fase 3 **✅ completo** (incluido "Tests de `reports/stats`" con las cifras anteriores). **§6.2 nuevo — decisiones cerradas de la Fase 3**: navegación portada → botón "Informes y estadísticas" → ruta **`/informes`** (pila `[inicio, informes]`); `reports/stats.py` **lógica pura sin Flet ni SQL** (recibe modelos materializados) con `PRESETS_RANGO` (hoy = medianoche local; 7d/30d incluyen hoy; `fin` exclusivo; personalizado validado), filtros por `started_at` con **entries abiertas EXCLUIDAS y marcadas visualmente**, totales por tarea (desc, huérfanas `"Tarea #id"`), día (local, relleno a 0 con **tope 92 días**; "todo" solo días con datos) y semana (ISO lunes, cruza años), `informe(...)` snapshot y `csv_detalle` con separador **`;`**; UI con **3 vistas** (barras por día con `flet-charts`, tarta por tarea, tabla + **Exportar CSV**), filtros con presets/`DatePicker`/dropdowns (estado en `_filtros`, saneo de ids borrados), **aviso ámbar** de intervalos en curso y snacks en español sin trazas. **CSV en `Path.cwd()` con `utf-8-sig`** — decisión documentada, **pendiente de revisar en Fase 4** (candidato a `~/Documents` al empaquetar). **Límite headless documentado** (§6.2/§7): renderizado real de Flutter de los gráficos y cierre nativo de diálogos (los objetos Python sí se cubren al 100 %). §7 ajustado a la realidad (fila Reporting con 45 tests, UI 116, cobertura `reports/`, nota de tz local Windows **sin `tzset`** — tests basados en offset real del sistema). README actualizado (estado "Fases 0-3 completadas", 308 tests, pantalla `/informes`, `reports/` ya no vacío). | Agente bibliotecario |
+| 2026-11-21 | **Cierre de Fase 4 (Empaquetado Windows), completada y verificada por el coordinador** — **pendiente manual no bloqueante: prueba en máquina limpia sin Python**. **Suite: 309 tests → ✅ 309 passed, 0 failed; cobertura 100 %** (`core`+`storage`+`ui`+`reports`, 1134 statements). **Artefacto validado:** `build/windows/time-tracker.exe` (75 KB) + carpeta autocontenida de **123 MB / 3.115 ficheros** (**sin Python ni VC++ redist en el destino, sin red en runtime**). Roadmap: checklist de Fase 4 **✅ completo** salvo "validar en máquina limpia" (marcado como pendiente manual del usuario). **§6.3 nuevo — decisiones/gotchas**: CSV ahora en **`~/Documents` con fallback al CWD bajo `OSError`** (`destino_csv()`, código de Fase 3; tests ajustados en Fase 4 parcheando `destino_csv` a `tmp_path` + test nuevo de ambas ramas); **`flet build windows` se mantiene** (sin PyInstaller) con comando exacto **`PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run flet build windows --yes --log-format plain`** (sin UTF-8 → `UnicodeEncodeError` en rich/emoji en consola cp1252; **Modo de Desarrollo de Windows obligatorio** por symlinks de plugins Flutter — registro `AllowDevelopmentWithoutDevLicense=1`, ya activado; ~4–5 min; requisitos: Flutter SDK 3.47.9, VS Community con C++/MSVC, red/pub.dev); **`[tool.flet]`** (`product = "Time Tracker"`, `build_number = 1`, versión de `project.version`, **icono por defecto de Flet** — `assets/icon.png` pendiente de diseño, sin dependencias nuevas); **próximo build: añadir `--exclude tests`** (evita empaquetar `tests/` y los `.md`, 845 KB — decisión del usuario); **smoke OK** (arranque 2,5 s con perfil ≤15 s primera vez, BD `integrity_check` ok, cronómetro/informes/gráfico/CSV, cierre sin huérfanos, sin crash). §7 ajustado (309 tests, 1134 statements, nota hermética del CSV, smoke con pendiente de máquina limpia); §6.2 apunta a §6.3 (CSV resuelto). README actualizado (estado "Fases 0-4 completadas", 309 tests, sección de empaquetado). | Agente bibliotecario |

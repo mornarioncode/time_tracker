@@ -27,7 +27,7 @@ from flet_charts import BarChart, PieChart
 from core.models import Session, Task, TimeEntry
 from reports import stats
 from ui import logica
-from ui.app import TimeTrackerApp
+from ui.app import TimeTrackerApp, destino_csv
 from ui.logica import FiltrosInforme
 from ui.pages.informe import (
     _al_cambiar_valor,
@@ -736,7 +736,8 @@ def _sembrar_intervalo_cerrado(service, clock, segundos: int = 1800):
 
 
 def test_exportar_sin_datos_snack_y_no_escribe_nada(service, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)   # el CSV se escribe en el directorio de trabajo
+    monkeypatch.chdir(tmp_path)         # cwd = tmp_path (nada fuera de aquí)
+    monkeypatch.setattr("ui.app.destino_csv", lambda: tmp_path)  # defensa
     page, app = _arrancar_en_informes(service)
 
     app._informe_exportar()
@@ -749,6 +750,9 @@ def test_exportar_con_datos_escribe_csv_con_bom_utf8(service, clock,
                                                      tmp_path, monkeypatch):
     _sembrar_intervalo_cerrado(service, clock)
     monkeypatch.chdir(tmp_path)
+    # Fase 4: el CSV va a `~/Documents`; lo redirigimos a tmp_path para que ni
+    # el snack ni el fichero toquen el home real del usuario.
+    monkeypatch.setattr("ui.app.destino_csv", lambda: tmp_path)
     page, app = _arrancar_en_informes(service)
 
     app._informe_exportar()
@@ -770,6 +774,7 @@ def test_exportar_con_error_de_disco_snack_generico_sin_traza(service, clock,
                                                               tmp_path, monkeypatch):
     _sembrar_intervalo_cerrado(service, clock)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("ui.app.destino_csv", lambda: tmp_path)  # sin tocar ~/Documents
 
     def disco_lleno(self, *args, **kwargs):
         raise OSError("Disco lleno: acceso denegado")
@@ -784,3 +789,34 @@ def test_exportar_con_error_de_disco_snack_generico_sin_traza(service, clock,
     for prohibido in ("Traceback", "OSError", "Disco", "Path"):
         assert prohibido not in texto
     assert list(tmp_path.glob("informe_*.csv")) == []
+
+
+def test_destino_csv_crea_documents_y_de_fallback_a_cwd_si_falla(tmp_path,
+                                                                 monkeypatch):
+    """Fase 4: `~/Documents` si se puede crear; si `mkdir` lanza `OSError` → cwd.
+
+    Fase 1 (rama feliz): `Path.home()` = tmp_path → se crea `tmp_path/Documents`
+    y se devuelve (sin tocar el home real del usuario).
+
+    Fase 2 (rama `except OSError`): `Path.home()` apunta a un FICHERO, así que
+    `Documents/` nunca podrá crearse bajo él y `mkdir` lanza un `OSError` real
+    (en Windows `FileNotFoundError`, en POSIX `NotADirectoryError`) → fallback
+    al directorio de trabajo, sin traza.
+    """
+    monkeypatch.chdir(tmp_path)               # cwd = tmp_path
+
+    # rama feliz: Documents se crea bajo un "home" válido
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    destino_ok = destino_csv()                # no debe lanzar
+    assert destino_ok == tmp_path / "Documents"
+    assert destino_ok.is_dir()
+
+    # rama de fallo: el "home" es un fichero → mkdir lanza OSError → cwd
+    bloqueador = tmp_path / "no_es_un_directorio.txt"
+    bloqueador.write_text("x")
+    monkeypatch.setattr(Path, "home", lambda: bloqueador)
+
+    destino = destino_csv()                   # no debe lanzar (sin traza)
+
+    assert destino == Path.cwd() == tmp_path  # fallback al directorio de trabajo
+    assert not (bloqueador / "Documents").exists()  # nada creado donde no toca

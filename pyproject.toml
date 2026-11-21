@@ -13,6 +13,15 @@ dependencies = [
     "flet-charts==1.1.2",
 ]
 
+# Metadatos que `flet build` (Fase 4) lee además de `project.name`/`version`:
+# `product` es el nombre visible (título de ventana, menú Inicio); la versión
+# mostrada (`--build-name`) sale automáticamente de `project.version` y
+# `build_number` es el contador interno de compilaciones del runner.
+# Icono: sin `assets/icon.png` el build usa el icono por defecto de Flet.
+[tool.flet]
+product = "Time Tracker"
+build_number = 1
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
