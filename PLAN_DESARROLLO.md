@@ -331,15 +331,55 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 
 ### Fase 3 — Reporting
 
-**Objetivo:** estadísticas de la actividad.
+**Objetivo:** estadísticas de la actividad. — **✅ Completada y verificada (21/11/2026).**
 
-- [ ] `reports/stats.py`: totales agrupados por **tarea**, por **día**, por **semana**; rangos: hoy / 7 días / 30 días / todo / rango personalizado.
-- [ ] Filtros: por sesión, por tarea, por rango de fechas.
-- [ ] **report_page** con `flet-charts`: barras (duración por día), tarta o barras horizontales (reparto por tarea), tabla detallada exportable (CSV opcional).
-- [ ] Ignorar entries sin `ended_at` en los cálculos (o contarlas hasta ahora — decidir y documentar; **recomendado: excluir y marcar visualmente**).
-- [ ] Tests de `reports/stats` con datos sembrados.
+> **Estado: ✅ completada y verificada (21/11/2026).** Verificación del coordinador: **308 tests → 308 passed, 0 failed, 0 xfail** (+83 nuevos: `tests/test_reports.py` 45, `tests/test_ui_informe.py` 38); cobertura **100 %** en `core`+`storage`+`ui` **y `reports/stats.py`** (1127/1127 statements); **sin bugs**. Decisiones de implementación en **§6.2**.
 
-**Entregables:** página de informes con al menos 3 vistas y filtros funcionando.
+- [x] `reports/stats.py`: totales agrupados por **tarea**, por **día**, por **semana**; rangos: hoy / 7 días / 30 días / todo / rango personalizado.
+- [x] Filtros: por sesión, por tarea, por rango de fechas.
+- [x] **report_page** con `flet-charts`: barras (duración por día), tarta o barras horizontales (reparto por tarea), tabla detallada exportable (CSV opcional).
+- [x] Ignorar entries sin `ended_at` en los cálculos (o contarlas hasta ahora — decidir y documentar; **recomendado: excluir y marcar visualmente**).
+- [x] Tests de `reports/stats` con datos sembrados: **45 tests** (`tests/test_reports.py`) + **38 de UI** (`tests/test_ui_informe.py`); **cobertura `reports/stats.py` = 100 %**.
+
+**Entregables:** página de informes con al menos 3 vistas y filtros funcionando. **✅ Verificado por el coordinador (21/11/2026):** 308 tests en verde, 100 % de cobertura (`core`+`storage`+`ui`+`reports/stats.py`), sin bugs.
+
+#### 6.2 Decisiones cerradas en la implementación de la Fase 3 (Reporting) — **✅ completada y verificada (21/11/2026)**
+
+> Todas las decisiones de este apartado están **cerradas**. Fuente: implementación de la Fase 3, verificada por el coordinador (21/11/2026).
+
+**Navegación:**
+
+- Portada → botón **"Informes y estadísticas"** → ruta **`/informes`** (constante `logica.RUTA_INFORMES`); la pila queda **`[inicio, informes]`** con el "atrás" nativo de Flet (mismo patrón que `/sesion/<id>`, §6.1).
+
+**`reports/stats.py` — lógica pura, sin Flet ni SQL:**
+
+- Recibe **modelos materializados** (snapshots ya cargados por el servicio); no toca la BD ni depende de la UI → testeable headless con datos sembrados.
+- **Rangos (`PRESETS_RANGO`)**: `("hoy", "7d", "30d", "todo", "personalizado")`.
+  - **hoy** = desde la **medianoche local**;
+  - **7d / 30d incluyen hoy**; el `fin` del `Rango` es **exclusivo**;
+  - **personalizado** con validaciones (`desde ≤ hasta`, fechas válidas) — los casos inválidos se rechazan antes de calcular.
+- **Filtros por `started_at`**: las entries **abiertas (sin `ended_at`) se EXCLUYEN de los cálculos y se marcan visualmente** (decisión sobre el criterio del checklist de Fase 3).
+- **Agregaciones**:
+  - **Totales por tarea** (orden descendente; las entries sin task válido se agrupan como **`"Tarea #id"`**);
+  - **Totales por día** (día **local**, con relleno de días a **0** hasta un **tope de 92 días** — `_DIAS_MAX_RANGO`; el preset **"todo"** solo pinta días con datos);
+  - **Totales por semana** (inicio **lunes ISO**, puede **cruzar años**).
+- **`informe(...)`**: construye un **snapshot** del informe con los filtros/rango dados.
+- **`csv_detalle(...)`**: tabla de detalle serializada a CSV con separador **`;`**.
+
+**UI (`ui/pages/informe.py` + `ui/app.py` + `ui/logica.py`):**
+
+- **3 vistas** intercambiables: **barras por día** (con `flet-charts`), **tarta por tarea** y **tabla de detalle** con botón **"Exportar CSV"**.
+- **Filtros**: presets de rango, **`DatePicker`** para el rango personalizado y **dropdowns de sesión y tarea**; el estado vive en **`app._filtros`** (objeto `logica.FiltrosInforme`, persistente entre repintados) con **saneo de ids borrados** (si la sesión/tarea del filtro ya no existe → se resetea a `None`; el `preset`/`vista` inválidos se rechazan con snack sin alterar el filtro).
+- **Aviso ámbar** (icono `WARNING`) de **intervalos en curso excluidos** del recuento.
+- **Snacks en español, sin trazas**: errores de rango/preset/disco → mensaje limpio (mismo criterio que §6.1: jamás un `Traceback` en pantalla).
+
+**Decisión de ubicación del CSV — revisar en Fase 4:**
+
+- El CSV se escribe en el **directorio de trabajo actual (`Path.cwd()`)**, con nombre `informe_<marca>.csv` y codificación **`utf-8-sig`** (BOM para que Excel detecte tildes). Es una decisión documentada de la Fase 3 y queda **pendiente de revisar al empaquetar (Fase 4)**, como candidato a escribirse en **`~/Documents`** (al empaquetar el cwd del .exe no es un directorio predecible). *No bloquea nada en Fase 3.*
+
+**Límite no testeable headless (alcance razonable documentado):**
+
+- No se pueden cubrir en tests: el **renderizado real de Flutter de los gráficos** y el **cierre nativo de los `DatePicker`/diálogos**. Los **objetos Python** correspondientes (handlers, callbacks, estado de filtros, construcción de las `ft.View`) **sí están cubiertos al 100 %**; la validación visual se hace con la prueba manual de la checklist (§7).
 
 ### Fase 4 — Empaquetado Windows
 
@@ -370,12 +410,13 @@ Cada fase termina en entregables verificables. No empezar una fase sin cerrar la
 |---|---|---|---|
 | Unitarias de dominio | modelos, validaciones, reglas (una entry abierta, cierre al cambiar de tarea) | `pytest` | 1 |
 | Integración persistencia | repositorio contra SQLite real en `tmp_path`; cascadas e integridad | `pytest` | 1 |
-| Reporting | agregaciones con datasets sembrados (incl. bordes: días sin datos, entry en curso) | `pytest` | 3 |
-| UI | **78 tests en verde (20/11/2026)**: montaje **headless** de páginas con datos falsos (`PaginaFalsa`) y verificación de controles clave — **sin plugin de Flet para pytest** (las `ft.View` se construyen headless); el resto, **pruebas manuales** con checklist | `pytest` (+ ayudante propio `tests/ui_util.py`) | 2 |
+| Reporting | **45 tests en verde (21/11/2026)**: agregaciones con datasets sembrados (incl. bordes: días sin datos, relleno hasta 92 días, entry en curso excluida, rangos que cruzan años) | `pytest` (`tests/test_reports.py`) | 3 |
+| UI | **116 tests en verde (21/11/2026)**: 78 de Fase 2 + **38 de informes** (`test_ui_informe`): montaje **headless** de páginas con datos falsos (`PaginaFalsa`) y verificación de controles clave — **sin plugin de Flet para pytest** (las `ft.View` se construyen headless); el resto, **pruebas manuales** con checklist | `pytest` (+ ayudante propio `tests/ui_util.py`) | 2–3 |
 | Smoke final | checklist manual de los criterios de §9 en Windows limpio | manual | 4 |
 
 - No se usan *mocks* de SQLite: se prueba contra una BD real temporal (más fiable y detecta errores de SQL).
-- **Cobertura (20/11/2026): 100 % en `core`, `storage` y `ui/`** (225 tests en verde). **Único fichero no cubierto: `main.py`** (bootstrap Flet real, que requiere GUI) — **alcance razonable** documentado al cerrar la Fase 2.
+- **Cobertura (21/11/2026): 100 % en `core`, `storage`, `ui/` y `reports/stats.py`** (**308 tests en verde**; 1127/1127 statements en esos módulos). **Único fichero no cubierto: `main.py`** (bootstrap Flet real, que requiere GUI) — **alcance razonable** documentado al cerrar la Fase 2. **Límite headless:** el renderizado real de Flutter de los gráficos y el cierre nativo de los diálogos (`DatePicker`) no se pueden testear sin GUI (los objetos Python sí están cubiertos — §6.2).
+- **Zona horaria en tests (Windows):** en Windows **no existe `time.tzset`**, así que los tests de rangos se basan en el **offset real del sistema**: derivan la medianoche local esperada con `astimezone()`/`utcoffset()` en lugar de fijar una tz concreta, por lo que **pasan sea cual sea la tz local** de la máquina (no dependen de un offset concreto).
 - Checklist manual por fase: crear sesión, cambiar de tarea repetidamente, matar el proceso y reabrir, verificar que los tiempos cuadran.
 - **CI (GitHub Actions) con `pytest`: opcional recomendado, pendiente de decisión del usuario.** No bloquea la Fase 1 ni el MVP: la suite corre y se exige en local (`pytest` en verde, §9.8); el CI solo añade repetibilidad y pasaría a ser necesario únicamente si se retoma iOS con runner macOS.
 
@@ -427,3 +468,4 @@ El MVP se considera terminado cuando, en **Windows**:
 | 2026-11-19 | **Cierre de Fase 1b (modelo de tareas globales), verificado por el coordinador.** DDL v2 (`user_version = 2`) + migración v1→v2 implementada y smoke-verificada: **transaccional** (rollback → BD intacta en v1), **idempotente** (`user_version = 2`), homónimos **fusionados con `MIN(id)`/`MIN(created_at)`**, entries heredan `session_id` de la task vieja, **huérfanos descartados**, `foreign_key_check` limpio. **Suite: 147 tests → ✅ 147 passed, 0 failed, 0 xfail; cobertura `core`+`storage` = 100 %** (`uv run pytest --cov=core --cov=storage`); **retirado el antiguo xfail FK** (bug FK-vs-UNIQUE corregido y en verde). **Decisión confirmada:** `seleccionar_sesion` sobre sesión cerrada **NO lanza** (historial consultable de solo lectura); las escrituras `iniciar_tarea`/`cerrar_sesion` sobre ella → **`SessionClosedError`** (§5.3.4 actualizado). Roadmap: Fase 1b checklist ✅ completo y Fase 1 sin la nota "refactor en curso". Añadida en §4 la **API v2 para la Fase 2 (UI)**. README actualizado (estado + comando de cobertura). | Agente bibliotecario |
 | 2026-11-19 | **Fase 2 (UI Flet) — implementada, EN VERIFICACIÓN (checklist sin marcar).** Estructura cerrada: `ui/app.py` (`TimeTrackerApp`, rutas `/` y `/sesion/<id>`, pila con atrás nativo, relee BD y repinta tras cada acción), `ui/theme.py` (Material 3, semilla índigo, ventana 1120×800 mín. 800×600, columna centrada 740 px con scroll), `ui/pages/inicio.py`, `ui/pages/sesion.py` y capas puras sin Flet `ui/format.py`, `ui/errores.py`, `ui/logica.py` (testabilidad sin GUI). **Decisiones UX cerradas** (§6.1 nuevo): tema **`ThemeMode.SYSTEM`** (usuario); **"Terminar sesión" con confirmación SOLO si hay tarea cronometrada** (usuario); **formatos** — totales de portada legibles `1 h 23 min`, intervalos precisos `hh:mm:ss` con >23 h (coordinador); **sin snackbar de éxito al añadir tarea** (coordinador); **errores de dominio → SnackBar 4 s** con `mensaje_usuario()` (dominio en español; `StorageError`/inesperadas → genérico, **jamás traza**); **confirmación modal en "eliminar sesión"** advirtiendo que el **catálogo de tareas se conserva**; **cronómetro** con *tick* 1 s vía `page.run_task` **recalculado desde `started_at` real** (persiste entre arranques); **sesión cerrada = solo lectura en dos capas** (`SessionClosedError` en servicio + vista sin controles de escritura). README actualizado al estado "Fase 2 implementada (en verificación)". **Falta:** pasada de verificación del coordinador/tester — checklist de Fase 2 **NO marcado**. | Agente bibliotecario |
 | 2026-11-20 | **Cierre de Fase 2 (UI Flet), completada y verificada por el coordinador.** **Suite: 225 tests → ✅ 225 passed, 0 failed, 0 xfail** (78 tests nuevos de UI: `test_ui_format` 17, `test_ui_logica` 19, `test_ui_app` 26, `test_ui_vistas` 9, `test_ui_errores` 7; ayudante `tests/ui_util.py`). **Cobertura 100 % en `core`+`storage` y también 100 % en `ui/`**; **sin bugs** en la UI; **sin plugin de Flet para pytest** (las `ft.View` se construyen headless). Tests de UI verifican el contrato §6.1, incluido el **test clave**: sesión cerrada = **ni botones ni TextField de escritura**; handlers con `PaginaFalsa` (crear/abrir/terminar con confirmación **solo si hay entry en curso**; eliminar con aviso de catálogo); `ThemeMode.SYSTEM`; cronómetro **recalculado desde `started_at`**. **Único no cubierto: `main.py`** (bootstrap Flet real, requiere GUI) — **alcance razonable** anotado en §7. Roadmap: checklist de Fase 2 **✅ completo** y notas de §6/§6.1 actualizadas a "completada y verificada (20/11/2026)". §7 ajustado a la realidad (tests de UI hechos, cobertura `ui/`). README actualizado (estado "Fases 0-2 completadas" + 225 tests). | Agente bibliotecario |
+| 2026-11-21 | **Cierre de Fase 3 (Reporting), completada y verificada por el coordinador.** **Suite: 308 tests → ✅ 308 passed, 0 failed, 0 xfail** (+83 nuevos: `tests/test_reports.py` 45, `tests/test_ui_informe.py` 38); **cobertura 100 % en `core`+`storage`+`ui` y `reports/stats.py`** (1127/1127 statements); **sin bugs**. Roadmap: checklist de Fase 3 **✅ completo** (incluido "Tests de `reports/stats`" con las cifras anteriores). **§6.2 nuevo — decisiones cerradas de la Fase 3**: navegación portada → botón "Informes y estadísticas" → ruta **`/informes`** (pila `[inicio, informes]`); `reports/stats.py` **lógica pura sin Flet ni SQL** (recibe modelos materializados) con `PRESETS_RANGO` (hoy = medianoche local; 7d/30d incluyen hoy; `fin` exclusivo; personalizado validado), filtros por `started_at` con **entries abiertas EXCLUIDAS y marcadas visualmente**, totales por tarea (desc, huérfanas `"Tarea #id"`), día (local, relleno a 0 con **tope 92 días**; "todo" solo días con datos) y semana (ISO lunes, cruza años), `informe(...)` snapshot y `csv_detalle` con separador **`;`**; UI con **3 vistas** (barras por día con `flet-charts`, tarta por tarea, tabla + **Exportar CSV**), filtros con presets/`DatePicker`/dropdowns (estado en `_filtros`, saneo de ids borrados), **aviso ámbar** de intervalos en curso y snacks en español sin trazas. **CSV en `Path.cwd()` con `utf-8-sig`** — decisión documentada, **pendiente de revisar en Fase 4** (candidato a `~/Documents` al empaquetar). **Límite headless documentado** (§6.2/§7): renderizado real de Flutter de los gráficos y cierre nativo de diálogos (los objetos Python sí se cubren al 100 %). §7 ajustado a la realidad (fila Reporting con 45 tests, UI 116, cobertura `reports/`, nota de tz local Windows **sin `tzset`** — tests basados en offset real del sistema). README actualizado (estado "Fases 0-3 completadas", 308 tests, pantalla `/informes`, `reports/` ya no vacío). | Agente bibliotecario |

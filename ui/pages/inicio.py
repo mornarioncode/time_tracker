@@ -20,11 +20,13 @@ def construir_vista_inicio(
     on_crear: Callable[[str], None],
     on_abrir: Callable[[int], None],
     on_eliminar: Callable[[int, str], None],
+    on_informes: Callable[[], None] | None = None,
 ) -> ft.View:
     """`View` de la portada.
 
     - Si hay sesión abierta, aviso destacado con **Continuar sesión**.
     - Formulario **Nueva sesión** (Enter o botón → crea y navega).
+    - Acceso a **Informes** (si se pasa `on_informes`).
     - Listado de sesiones: nombre, fecha, duración total y estado. La fila
       completa abre la sesión (de solo lectura si está cerrada); el botón de
       papelera elimina **con confirmación**.
@@ -81,6 +83,21 @@ def construir_vista_inicio(
                     ),
                 ]
             ),
+        )
+
+    # ----------------------------------------------------------- informes
+    if on_informes is not None:
+        controles.append(
+            ft.Row(
+                [
+                    ft.OutlinedButton(
+                        "Informes y estadísticas",
+                        icon=ft.Icons.INSIGHTS,
+                        on_click=lambda e: on_informes(),
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+            )
         )
 
     # --------------------------------------------------------- listado

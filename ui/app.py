@@ -20,18 +20,37 @@ Contratos clave:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Callable
 
 import flet as ft
 
 from core.exceptions import SessionNotFoundError, TimeTrackerError
-from core.models import Session, TimeEntry, utc_now
+from core.models import Session, Task, TimeEntry, utc_now
 from core.services import TimeTrackerService
+from reports import stats
 from ui import format as fmt, logica, theme
 from ui.errores import mensaje_usuario
 from ui.pages.inicio import construir_vista_inicio
+from ui.pages.informe import construir_vista_informe
 from ui.pages.sesion import construir_vista_sesion
+
+
+def destino_csv() -> Path:
+    """Carpeta de destino de la exportación CSV (decisión Fase 4).
+
+    `~/Documents`: al empaquetar el `.exe` (Fase 4) el directorio de trabajo
+    no es predecible, así que el CSV deja de escribirse en `Path.cwd()`.
+    Fallback: si la carpeta no existe y no se puede crear (permisos, disco),
+    se usa el directorio de trabajo actual — nunca se lanza una traza.
+    """
+    documentos = Path.home() / "Documents"
+    try:
+        documentos.mkdir(parents=True, exist_ok=True)
+        return documentos
+    except OSError:
+        return Path.cwd()
 
 
 class TimeTrackerApp:
@@ -40,6 +59,8 @@ class TimeTrackerApp:
     def __init__(self, page: ft.Page, service: TimeTrackerService) -> None:
         self.page = page
         self.service = service
+        # Filtros de la vista de informes: estado que sobrevive a los repintados
+        self._filtros = logica.FiltrosInforme()
         # Cronómetro: control vivo de la vista de sesión + inicio de la entry
         self._lbl_crono: ft.Text | None = None
         self._crono_inicio: datetime | None = None
@@ -120,6 +141,9 @@ class TimeTrackerApp:
         vistas: list[ft.View] = [self._vista_inicio(ahora)]
         if sesion is not None:
             vistas.append(self._vista_sesion(sesion, ahora))
+        elif logica.es_ruta_informes(ruta):
+            # Pila [inicio, informes]: el "atrás" del sistema vuelve a portada.
+            vistas.append(self._vista_informe(ahora))
 
         page.views.clear()
         page.views.extend(vistas)
@@ -138,6 +162,7 @@ class TimeTrackerApp:
             on_crear=self._crear_sesion,
             on_abrir=self._abrir_sesion,
             on_eliminar=self._eliminar_sesion,
+            on_informes=lambda: self.page.navigate(logica.RUTA_INFORMES),
         )
 
     def _vista_sesion(self, sesion: Session, ahora: datetime) -> ft.View:
@@ -176,6 +201,59 @@ class TimeTrackerApp:
             on_terminar_sesion=lambda: self._terminar_sesion(sid),
             on_volver=self._volver_inicio,
         )
+
+    def _vista_informe(self, ahora: datetime) -> ft.View:
+        """Snapshot de informes: agregado por `reports/stats` + filtros."""
+        informe, sesiones, tareas = self._snapshot_informe(ahora)
+        return construir_vista_informe(
+            informe,
+            sesiones=sesiones,
+            tareas=tareas,
+            filtros=self._filtros,
+            on_preset=self._informe_preset,
+            on_vista=self._informe_vista,
+            on_elegir_desde=lambda: self._elegir_fecha("desde"),
+            on_elegir_hasta=lambda: self._elegir_fecha("hasta"),
+            on_sesion=self._informe_sesion,
+            on_tarea=self._informe_tarea,
+            on_exportar=self._informe_exportar,
+            on_volver=self._volver_inicio,
+        )
+
+    def _snapshot_informe(
+        self, ahora: datetime
+    ) -> tuple[stats.Informe, list[Session], list[Task]]:
+        """Entries de TODAS las sesiones → `stats.informe` con los filtros.
+
+        `listar_intervalos()` solo devuelve los de UNA sesión, así que aquí
+        se recorre el catálogo de sesiones (sin SQL nuevo: solo el servicio).
+        """
+        sesiones = self.service.listar_sesiones()
+        tareas = self.service.listar_tareas()
+
+        # Sanear filtros que apunten a datos ya borrados (p. ej. sesión
+        # eliminada mientras el filtro seguía seleccionado).
+        ids_sesiones = {s.id for s in sesiones}
+        if self._filtros.sesion_id not in ids_sesiones | {None}:
+            self._filtros.sesion_id = None
+        ids_tareas = {t.id for t in tareas}
+        if self._filtros.tarea_id not in ids_tareas | {None}:
+            self._filtros.tarea_id = None
+
+        entries: list[TimeEntry] = [
+            e for s in sesiones if s.id is not None
+            for e in self.service.listar_intervalos(s.id)
+        ]
+        rango = logica.rango_de_filtros(self._filtros, ahora)
+        informe = stats.informe(
+            entries,
+            tareas,
+            rango=rango,
+            ahora=ahora,
+            session_id=self._filtros.sesion_id,
+            task_id=self._filtros.tarea_id,
+        )
+        return informe, sesiones, tareas
 
     # -------------------------------------------------------------- acciones
 
@@ -270,6 +348,108 @@ class TimeTrackerApp:
         self._mostrar_mensaje(
             "Sesión terminada: ya no se puede cronometrar en ella."
         )
+
+    # ------------------------------------------------------------- informes
+
+    def _informe_preset(self, clave: str) -> None:
+        """Cambia el rango del informe (valida antes de comprometer el estado)."""
+        try:
+            if clave == "personalizado":
+                stats.rango_fechas(self._filtros.desde, self._filtros.hasta)
+            else:
+                stats.rango_preset(clave, utc_now())
+        except TimeTrackerError as exc:
+            self._mostrar_error(exc)
+            return
+        self._filtros.preset = clave
+        self._refrescar()
+
+    def _informe_vista(self, clave: str) -> None:
+        """Conmuta entre las tres vistas (valores internos, sin validación)."""
+        if clave not in logica.VISTAS_INFORME:
+            return
+        self._filtros.vista = clave
+        self._refrescar()
+
+    def _informe_sesion(self, session_id: int | None) -> None:
+        self._filtros.sesion_id = session_id
+        self._refrescar()
+
+    def _informe_tarea(self, task_id: int | None) -> None:
+        self._filtros.tarea_id = task_id
+        self._refrescar()
+
+    def _elegir_fecha(self, cual: str) -> None:
+        """Abre el `DatePicker` de Material para `desde` o `hasta`.
+
+        Al confirmar valida el par: si `desde > hasta` → snack de error (el
+        picker se cierra solo —comportamiento nativo de Material— y se reabre
+        desde su botón para corregir); si es válido, actualiza el filtro y
+        repinta. El `pop_dialog` de la rama válida cierra el picker en
+        páginas simuladas y es no-op si el cliente ya lo había cerrado.
+        """
+        filtros = self._filtros
+        valor = filtros.desde if cual == "desde" else filtros.hasta
+
+        def confirmado(e: Any) -> None:
+            nuevo = picker.value
+            if isinstance(nuevo, datetime):
+                nuevo = nuevo.date()
+            if not isinstance(nuevo, date):
+                return
+            try:
+                if cual == "desde":
+                    stats.rango_fechas(nuevo, filtros.hasta)
+                    filtros.desde = nuevo
+                else:
+                    stats.rango_fechas(filtros.desde, nuevo)
+                    filtros.hasta = nuevo
+            except TimeTrackerError as exc:
+                self._mostrar_error(exc)
+                return
+            # Cierra el diálogo: en Flet real `show_dialog` ya lo marca
+            # `open=True`; en página simulada lo marcamos nosotros para que
+            # el cierre funcione también en tests headless. Si el cliente ya
+            # lo cerró (confirmación nativa), `open` está a False → no-op.
+            if getattr(picker, "open", False):
+                self.page.pop_dialog()
+            filtros.preset = "personalizado"
+            self._refrescar()
+
+        picker = ft.DatePicker(
+            value=valor,
+            help_text="Desde" if cual == "desde" else "Hasta",
+            confirm_text="Aceptar",
+            cancel_text="Cancelar",
+            on_change=confirmado,
+        )
+        self.page.show_dialog(picker)
+        picker.open = True  # por si la página no lo marca (pág. simulada)
+
+    def _informe_exportar(self) -> None:
+        """Escribe el CSV del detalle en `~/Documents` (BOM UTF-8).
+
+        Decisión Fase 4 (revisión de la ubicación de la Fase 3): el CSV ya
+        NO va al directorio de trabajo — con el `.exe` empaquetado el cwd no
+        es predecible — sino a `~/Documents`, con fallback al cwd si esa
+        carpeta no existe/no se puede crear (`destino_csv`). Sin `FilePicker`
+        a propósito: es una app de escritorio monousuario y así el botón
+        funciona igual en todas las plataformas. Si el disco no permite
+        escribir → snack genérico.
+        """
+        try:
+            informe, sesiones, tareas = self._snapshot_informe(utc_now())
+            if not informe.entries:
+                self._mostrar_mensaje("No hay datos que exportar.")
+                return
+            texto = stats.csv_detalle(informe.entries, tareas, sesiones)
+            marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ruta = destino_csv() / f"informe_{marca}.csv"
+            ruta.write_text(texto, encoding="utf-8-sig")  # BOM p/ Excel
+        except Exception as exc:  # errores de disco → snack genérico
+            self._mostrar_error(exc)
+            return
+        self._mostrar_mensaje(f"CSV guardado en {ruta}")
 
     # ------------------------------------------------------------- cronómetro
 
